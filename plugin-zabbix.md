@@ -3,8 +3,8 @@
 Ao instalar o plugin Zabbix no Grafana via grafana-cli ou variável de ambiente GF_INSTALL_PLUGINS, o Grafana pode instalar uma versão incompatível com sua instalação:
 
 - Grafana 10.4.1 + Zabbix 7.0 → Requer plugin v5.2.1
-- Plugin instalado automaticamente: v6.1.1 (requer Grafana >=11.6.0) ❌
-- Ou: v4.6.1 (não suporta Zabbix 7.0) ❌
+- Plugin instalado automaticamente: v6.1.1 (requer Grafana >=11.6.0)
+- Ou: v4.6.1 (não suporta Zabbix 7.0)
 
 ### Sintomas:
 
