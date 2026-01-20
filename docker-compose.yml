@@ -29,12 +29,6 @@ services:
   # --------------------------------------
   # MySQL Database
   # --------------------------------------
-  # Escolha: MySQL para compatibilidade com banco atual
-  # Justificativa:
-  # - Manter compatibilidade com ambiente existente
-  # - Facilitar migração direta dos dados atuais
-  # - Evitar necessidade de conversão de schema
-  # - Zabbix suporta MySQL oficialmente
   mysql:
     image: mysql:8.0
     container_name: zabbix-mysql
@@ -188,14 +182,23 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin_change_me}
       TZ: America/Sao_Paulo
       
-      # ADICIONAR ESTAS LINHAS:
+      # Permitir plugin não assinado (obrigatório para v5.x)
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: alexanderzobnin-zabbix-datasource
+      
+      # Desabilitar plugin marketplace (evita substituição automática)
       GF_PLUGINS_ENABLE_ALPHA: "false"
       GF_PLUGIN_ADMIN_ENABLED: "false"
+
+      # ALERTA! NÃO ADICIONAR GF_INSTALL_PLUGINS (causa instalação de versão incompatível)
       
+      # Desabilitar telemetria (opcional)
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+
+      # Permitir embedding (se necessário)
       GF_SECURITY_ALLOW_EMBEDDING: "true"
+
+      # Configurações de sessão
       GF_SESSION_PROVIDER: file
       GF_SESSION_PROVIDER_CONFIG: sessions
     
@@ -204,7 +207,7 @@ services:
     
     volumes:
       - grafana-data:/var/lib/grafana
-      # ADICIONAR ESTA LINHA (monta plugin diretamente):
+      # (monta plugin diretamente):
       - ./alexanderzobnin-zabbix-app:/var/lib/grafana/plugins/alexanderzobnin-zabbix-app:ro
     
     networks:
@@ -237,3 +240,4 @@ services:
 # 3. Comunicação Grafana -> Zabbix:
 #    - URL do Zabbix: http://zabbix-web:8080/api_jsonrpc.php
 #    - Ou: http://zabbix-server:10051 (para API direto no server)
+
