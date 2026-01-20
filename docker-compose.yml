@@ -1,0 +1,239 @@
+version: '3.8'
+
+# ========================================
+# NETWORKS
+# ========================================
+# Rede dedicada para comunicação interna entre containers
+# O Docker fornece DNS automático usando nomes de serviço
+networks:
+  zabbix-network:
+    driver: bridge
+
+# ========================================
+# VOLUMES
+# ========================================
+# Volumes nomeados para persistência de dados
+volumes:
+  mysql-data:
+    driver: local
+  zabbix-server-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# ========================================
+# SERVICES
+# ========================================
+services:
+  
+  # --------------------------------------
+  # MySQL Database
+  # --------------------------------------
+  # Escolha: MySQL para compatibilidade com banco atual
+  # Justificativa:
+  # - Manter compatibilidade com ambiente existente
+  # - Facilitar migração direta dos dados atuais
+  # - Evitar necessidade de conversão de schema
+  # - Zabbix suporta MySQL oficialmente
+  mysql:
+    image: mysql:8.0
+    container_name: zabbix-mysql
+    restart: unless-stopped
+    
+    command:
+      - mysqld
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --default-authentication-plugin=mysql_native_password
+      - --max-allowed-packet=128M
+      - --innodb-buffer-pool-size=1G
+      - --innodb-log-file-size=256M
+      - --innodb-flush-log-at-trx-commit=2
+      - --innodb-flush-method=O_DIRECT
+    
+    environment:
+      # Configurações do banco de dados
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-zabbix_strong_password_123}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_strong_password_123}
+    
+    volumes:
+      # Persistência dos dados do MySQL
+      - mysql-data:/var/lib/mysql
+    
+    networks:
+      - zabbix-network
+    
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_strong_password_123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # --------------------------------------
+  # Zabbix Server
+  # --------------------------------------
+  # Core do Zabbix - processa dados, triggers, alertas
+  zabbix-server:
+    image: zabbix/zabbix-server-mysql:ubuntu-7.0-latest
+    container_name: zabbix-server
+    restart: unless-stopped
+    
+    environment:
+      # Conexão com banco de dados MySQL
+      DB_SERVER_HOST: mysql
+      DB_SERVER_PORT: 3306
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-zabbix_strong_password_123}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_strong_password_123}
+      
+      # Configurações do Zabbix Server
+      ZBX_CACHESIZE: 512M
+      ZBX_HISTORYCACHESIZE: 256M
+      ZBX_TRENDCACHESIZE: 128M
+      ZBX_VALUECACHESIZE: 256M
+      
+      # Timezone
+      PHP_TZ: America/Sao_Paulo
+    
+    ports:
+      # Porta para agentes Zabbix se conectarem
+      - "10051:10051"
+    
+    volumes:
+      # Dados de configuração e módulos externos
+      - zabbix-server-data:/var/lib/zabbix
+    
+    networks:
+      - zabbix-network
+    
+    depends_on:
+      mysql:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 10051 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # --------------------------------------
+  # Zabbix Web Frontend
+  # --------------------------------------
+  # Interface web do Zabbix
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-mysql:alpine-7.0-latest
+    container_name: zabbix-web
+    restart: unless-stopped
+    
+    environment:
+      # Conexão com banco de dados MySQL
+      DB_SERVER_HOST: mysql
+      DB_SERVER_PORT: 3306
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-zabbix_strong_password_123}
+      
+      # Conexão com Zabbix Server
+      ZBX_SERVER_HOST: zabbix-server
+      ZBX_SERVER_PORT: 10051
+      
+      # Configurações PHP
+      PHP_TZ: America/Sao_Paulo
+      ZBX_SERVER_NAME: "Zabbix Monitoring"
+      
+      # Limites de upload (para importação de templates)
+      ZBX_MAXEXECUTIONTIME: 600
+      ZBX_MEMORYLIMIT: 256M
+      ZBX_POSTMAXSIZE: 32M
+      ZBX_UPLOADMAXFILESIZE: 16M
+    
+    ports:
+      # Porta HTTP para acesso web
+      - "8080:8080"
+      # Opcional: HTTPS
+      # - "8443:8443"
+    
+    networks:
+      - zabbix-network
+    
+    depends_on:
+      mysql:
+        condition: service_healthy
+      zabbix-server:
+        condition: service_started
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  # --------------------------------------
+  # Grafana
+  # --------------------------------------
+  # Plataforma de visualização e dashboards
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: grafana
+    restart: unless-stopped
+    
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin_change_me}
+      TZ: America/Sao_Paulo
+      
+      # ADICIONAR ESTAS LINHAS:
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: alexanderzobnin-zabbix-datasource
+      GF_PLUGINS_ENABLE_ALPHA: "false"
+      GF_PLUGIN_ADMIN_ENABLED: "false"
+      
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SESSION_PROVIDER: file
+      GF_SESSION_PROVIDER_CONFIG: sessions
+    
+    ports:
+      - "3000:3000"
+    
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # ADICIONAR ESTA LINHA (monta plugin diretamente):
+      - ./alexanderzobnin-zabbix-app:/var/lib/grafana/plugins/alexanderzobnin-zabbix-app:ro
+    
+    networks:
+      - zabbix-network
+    
+    depends_on:
+      zabbix-server:
+        condition: service_started
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# ========================================
+# NOTAS IMPORTANTES
+# ========================================
+# 1. Credenciais padrão Zabbix Web:
+#    - Usuário: Admin
+#    - Senha: zabbix
+#    - ALTERE após primeiro login!
+#
+# 2. Acesso aos serviços:
+#    - Zabbix Web: http://SEU_IP:8080
+#    - Grafana: http://SEU_IP:3000
+#    - Zabbix Server (agentes): SEU_IP:10051
+#
+# 3. Comunicação Grafana -> Zabbix:
+#    - URL do Zabbix: http://zabbix-web:8080/api_jsonrpc.php
+#    - Ou: http://zabbix-server:10051 (para API direto no server)

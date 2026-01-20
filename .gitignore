@@ -1,0 +1,38 @@
+# ========================================
+# .gitignore - Zabbix + Grafana Docker
+# ========================================
+
+# Arquivos sensíveis
+.env
+*.env
+.env.*
+
+# Dados e backups
+volumes/
+backup/
+*.sql
+*.sql.gz
+*.tar.gz
+*.db
+migration-backups/
+
+# Logs
+*.log
+logs/
+
+# Temporários
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+.docker/
+docker-compose.override.yml
